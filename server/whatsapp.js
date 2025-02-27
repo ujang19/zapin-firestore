@@ -39,6 +39,7 @@ const NodeCache = require("node-cache");
 const { Button, formatButtonMsg } = require("./dto/button");
 const { ulid } = require("ulid");
 const { Section, formatListMsg } = require("./dto/list");
+require("dotenv").config();
 
 
 const logger = MAIN_LOGGER.child({});
@@ -46,7 +47,7 @@ const msgRetryCounterCache = new NodeCache();
 
 
 const { useFirebaseAuthState } = require("session");
-const firebaseConfig = JSON.parse(fs.readFileSync("./firebase.json", "utf-8"));
+const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
 
 const connectToWhatsApp = async (token, io = null, viaOtp = false) => {
   if (typeof qrcode[token] !== "undefined" && !viaOtp) {
