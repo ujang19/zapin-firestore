@@ -1,0 +1,19 @@
+# Mengabaikan isi folder credentials kecuali file .gitkeep
+credentials/*
+!credentials/.gitkeep
+
+# Mengabaikan folder sistem macOS
+__MACOSX/
+
+# Mengabaikan folder node_modules agar tidak diunggah
+node_modules/
+
+# Mengabaikan file database Redis
+dump.rdb
+
+# Mengabaikan file lock package manager
+package-lock.json
+
+firebase.json 
+
+.env

@@ -1,0 +1,49 @@
+{
+  "dependencies": {
+    "@sentry/cli": "^2.42.1",
+    "@sentry/node": "^9.1.0",
+    "@sentry/profiling-node": "^9.1.0",
+    "@whiskeysockets/baileys": "^6.7.13",
+    "axios": "^1.7.9",
+    "baileys-redis-auth": "^1.0.14",
+    "baileys-redis-store": "^1.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "firebase-admin": "^13.1.0",
+    "https-proxy-agent": "^7.0.4",
+    "ioredis": "^5.5.0",
+    "jimp": "^0.16.13",
+    "lodash": "^4.17.21",
+    "mime-types": "^2.1.35",
+    "mysql2": "^3.9.2",
+    "node-cache": "^5.1.2",
+    "pino": "^9.6.0",
+    "pino-pretty": "^10.2.0",
+    "pmx": "^1.6.7",
+    "qrcode": "^1.5.3",
+    "readline": "^1.3.0",
+    "redis": "^4.7.0",
+    "session": "github:neoxr/session#firebase",
+    "sharp": "^0.32.2",
+    "socket.io": "^4.7.2",
+    "ulid": "^2.3.0",
+    "wa-sticker-formatter": "^1.6.0"
+  },
+  "name": "wamd",
+  "version": "7.5",
+  "description": "Whatsapp remote API multi device, multi instance. Based on baileys. Wanna more support contact me https://m-pedia.co.id ||  https://wa.me/6282298859671",
+  "main": "server.js",
+  "author": "M-Pedia.co.id <ilmansunannudin2@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "win-dev": "set NODE_ENV=development&&nodemon src/index && npm run sentry:sourcemaps",
+    "dev": "NODE_ENV=development node src/index",
+    "start": "NODE_ENV=production node src/index",
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org obayito --project node-express ./ && sentry-cli sourcemaps upload --org obayito --project node-express ./"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "credentials/*"
+    ]
+  }
+}
