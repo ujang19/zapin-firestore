@@ -1,8 +1,11 @@
 {
+  "name": "wamd",
+  "version": "7.5",
+  "description": "Whatsapp remote API multi device, multi instance. Based on baileys. Wanna more support contact me https://m-pedia.co.id ||  https://wa.me/6282298859671",
+  "main": "server.js",
+  "author": "M-Pedia.co.id <ilmansunannudin2@gmail.com>",
+  "license": "MIT",
   "dependencies": {
-    "@sentry/cli": "^2.42.1",
-    "@sentry/node": "^9.1.0",
-    "@sentry/profiling-node": "^9.1.0",
     "@whiskeysockets/baileys": "^6.7.13",
     "axios": "^1.7.9",
     "baileys-redis-auth": "^1.0.14",
@@ -29,17 +32,15 @@
     "ulid": "^2.3.0",
     "wa-sticker-formatter": "^1.6.0"
   },
-  "name": "wamd",
-  "version": "7.5",
-  "description": "Whatsapp remote API multi device, multi instance. Based on baileys. Wanna more support contact me https://m-pedia.co.id ||  https://wa.me/6282298859671",
-  "main": "server.js",
-  "author": "M-Pedia.co.id <ilmansunannudin2@gmail.com>",
-  "license": "MIT",
   "scripts": {
     "win-dev": "set NODE_ENV=development&&nodemon src/index && npm run sentry:sourcemaps",
     "dev": "NODE_ENV=development node src/index",
     "start": "NODE_ENV=production node src/index",
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --org obayito --project node-express ./ && sentry-cli sourcemaps upload --org obayito --project node-express ./"
+  },
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
   },
   "nodemonConfig": {
     "ignore": [
