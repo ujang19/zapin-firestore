@@ -49,10 +49,10 @@ io.on("connection", (socket) => {
 });
 
 // Start server
-const port = process.env.PORT || 3000; // DigitalOcean auto-assigns port
 server.listen(port, () => {
-  global.log.info(`✅ Server running on port ${port}`);
+  global.log.info(`Server running on port ${port}`);
 });
+
 
 
 // Enhanced error monitoring
