@@ -33,10 +33,10 @@
     "wa-sticker-formatter": "^1.6.0"
   },
   "scripts": {
-    "win-dev": "set NODE_ENV=development&&nodemon src/index && npm run sentry:sourcemaps",
-    "dev": "NODE_ENV=development node src/index",
-    "start": "NODE_ENV=production node src/index",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org obayito --project node-express ./ && sentry-cli sourcemaps upload --org obayito --project node-express ./"
+    "win-dev": "set NODE_ENV=development&&nodemon server.js",
+    "dev": "NODE_ENV=development node server.js",
+    "prestart": "npm install -g npm@latest",
+    "start": "NODE_ENV=production node server.js"
   },
   "engines": {
     "node": "18.x",
