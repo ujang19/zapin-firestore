@@ -49,9 +49,11 @@ io.on("connection", (socket) => {
 });
 
 // Start server
-server.listen(port, host, () => {
-  global.log.info(`Server running on ${host}:${port}`);
+const port = process.env.PORT || 3000; // DigitalOcean auto-assigns port
+server.listen(port, () => {
+  global.log.info(`✅ Server running on port ${port}`);
 });
+
 
 // Enhanced error monitoring
 process.on("unhandledRejection", (reason, promise) => {
