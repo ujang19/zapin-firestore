@@ -1,5 +1,6 @@
 "use strict";
-const wa = require("./server/whatsapp"); // Pakai sistem autentikasi dari whatsapp.js
+const path = require('path');
+const wa = require(path.join(__dirname, 'server', 'whatsapp.js'));
 const fs = require("fs");
 const dbs = require("./server/database/index");
 require("dotenv").config();
@@ -16,8 +17,8 @@ const server = http.createServer(app);
 server.setTimeout(30000);
 
 // Host and port configuration
-//const host = "127.0.0.1";
-const port = process.env.PORT || 3000; // Ensure the app listens on the assigned port.
+const host = "127.0.0.1";
+const port = process.env.PORT || 3100; // Ensure the app listens on the assigned port.
 
 const { Server } = require("socket.io");
 const io = new Server(server, {
@@ -33,11 +34,35 @@ app.use(cors({
   credentials: true, // Izinkan credentials seperti cookies atau headers auth
 }));
 
-
 // Middleware to track request timing and detect 408 errors
 app.use((req, res, next) => {
   res.set("Cache-Control", "no-store");
   req.io = io;
+  
+  // Menambahkan listener untuk mendeteksi status code 408
+  res.on("finish", () => {
+    if (res.statusCode === 408) {
+      global.log.error("408 Request Timeout detected, restarting the application...");
+      
+      // Menggunakan PM2 untuk merestart aplikasi jika status 408 terdeteksi
+      const pm2 = require("pm2");
+      pm2.connect((err) => {
+        if (err) {
+          global.log.error("Failed to connect to PM2:", err);
+          return;
+        }
+        pm2.restart("zapinapi", (err) => {
+          if (err) {
+            global.log.error("Failed to restart application:", err);
+          } else {
+            global.log.info("Application restarted due to 408 error.");
+          }
+          pm2.disconnect();
+        });
+      });
+    }
+  });
+
   next();
 });
 
@@ -58,11 +83,9 @@ io.on("connection", (socket) => {
 });
 
 // Start server
-server.listen(port, () => {
-  global.log.info(`Server running on port ${port}`);
+server.listen(port, host, () => {
+  global.log.info(`Server running on ${port}`);
 });
-
-
 
 // Enhanced error monitoring
 process.on("unhandledRejection", (reason, promise) => {
