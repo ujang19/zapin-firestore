@@ -8,8 +8,6 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.13",
     "axios": "^1.7.9",
-    "baileys-redis-auth": "^1.0.14",
-    "baileys-redis-store": "^1.0.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "firebase-admin": "^13.1.0",
