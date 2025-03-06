@@ -1,3 +1,4 @@
+
 const { Boom } = require("@hapi/boom");
 const {
   default: makeWASocket,
@@ -41,13 +42,13 @@ const { ulid } = require("ulid");
 const { Section, formatListMsg } = require("./dto/list");
 require("dotenv").config();
 
-
 const logger = MAIN_LOGGER.child({});
 const msgRetryCounterCache = new NodeCache();
 
 
 const { useFirebaseAuthState } = require("session");
 const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
+const admin = require("firebase-admin");
 
 const connectToWhatsApp = async (token, io = null, viaOtp = false) => {
   if (typeof qrcode[token] !== "undefined" && !viaOtp) {
@@ -104,7 +105,7 @@ const connectToWhatsApp = async (token, io = null, viaOtp = false) => {
     io?.emit("code", { token, data: pairingCode[token], message: "Pair with this code." });
   }
 
-  // Event Processing (Keeping Old Logic)
+  // Event Processing (Keepilogng Old Logic)
   sock[token].ev.process(async (events) => {
     if (events["connection.update"]) {
       const update = events["connection.update"];
@@ -540,108 +541,105 @@ async function getPpUrl(token, number, highrest) {
   }
 }
 
-// close connection
+
+
+
+
+// Inisialisasi Firestore
+if (!admin.apps.length) {
+  admin.initializeApp({ credential: admin.credential.cert(firebaseConfig) });
+}
+const db = admin.firestore();
+
 async function deleteCredentials(token, io = null) {
   if (io !== null) {
-    io.emit("message", { token: token, message: "Logout Progres.." });
+    io.emit("message", { token, message: "Logout Progress.." });
   }
+
   try {
-    if (typeof sock[token] === "undefined") {
-      const status = await connectWaBeforeSend(token);
-      if (status) {
-        sock[token].logout();
-        delete sock[token];
-      }
-    } else {
-      sock[token].logout();
+    if (typeof sock[token] !== "undefined") {
+      sock[token].logout().catch((err) => console.error("Error logging out:", err));
       delete sock[token];
     }
+
     delete qrcode[token];
     clearInterval(intervalStore[token]);
     setStatus(token, "Disconnect");
 
-    if (io != null) {
+    if (io !== null) {
       io.emit("Unauthorized", token);
-      io.emit("message", {
-        token: token,
-        message: "Connection closed. You are logged out.",
-      });
-    }
-    if (fs.existsSync(`./credentials/${token}`)) {
-      fs.rmSync(
-        `./credentials/${token}`,
-        { recursive: true, force: true },
-        (err) => {
-          if (err) console.log(err);
-        }
-      );
-      // fs.unlinkSync(`./sessions/session-${device}.json`)
+      io.emit("message", { token, message: "Connection closed. You are logged out." });
     }
 
-    // fs.rmdir(`credentials/${token}`, { recursive: true }, (err) => {
-    //     if (err) {
-    //         throw err;
-    //     }
-    //     console.log(`credentials/${token} is deleted`);
-    // });
+    // Hapus sesi dari Firestore dengan timeout
+    const sessionRef = db.collection("sessions").doc(token);
+    await Promise.race([
+      sessionRef.delete(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore delete timeout")), 5000))
+    ]).catch((err) => console.error("Error deleting Firestore session:", err));
 
-    return {
-      status: true,
-      message: "Deleting session and credential",
-    };
+    console.log(`Firestore session ${token} deleted`);
+    return { status: true, message: "Session and credential deleted" };
   } catch (error) {
-    console.log(error);
-    return {
-      status: true,
-      message: "Nothing deleted",
-    };
+    console.error("Unhandled error in deleteCredentials:", error);
+    return { status: false, message: "Error deleting session" };
   }
 }
 
 function clearConnection(token) {
   clearInterval(intervalStore[token]);
-
   delete sock[token];
   delete qrcode[token];
   setStatus(token, "Disconnect");
-  if (fs.existsSync(`./credentials/${token}`)) {
-    fs.rmSync(
-      `./credentials/${token}`,
-      { recursive: true, force: true },
-      (err) => {
-        if (err) console.log(err);
-      }
-    );
-    console.log(`credentials/${token} is deleted`);
-  }
+
+  // Hapus sesi dari Firestore dengan error handling
+  const sessionRef = db.collection("sessions").doc(token);
+  sessionRef
+    .delete()
+    .then(() => console.log(`Firestore session ${token} deleted`))
+    .catch((err) => console.error("Error deleting Firestore session:", err));
 }
 
 async function initialize(req, res) {
   const { token } = req.body;
-  if (token) {
-    const fs = require("fs");
-    const path = `./credentials/${token}`;
-    if (fs.existsSync(path)) {
-      sock[token] = undefined;
-      const status = await connectWaBeforeSend(token);
-      if (status) {
-        return res
-          .status(200)
-          .json({ status: true, message: `${token} connection restored` });
-      } else {
-        //   setStatus(token, "Disconnect");
-        return res
-          .status(200)
-          .json({ status: false, message: `${token} connection failed` });
-      }
-    }
-    return res.send({
-      status: false,
-      message: `${token} Connection failed,please scan first`,
-    });
+  if (!token) {
+    return res.status(400).json({ status: false, message: "Wrong Parameters" });
   }
-  return res.send({ status: false, message: "Wrong Parameterss" });
+
+  try {
+    const sessionRef = db.collection("sessions").doc(token);
+    const sessionDoc = await Promise.race([
+      sessionRef.get(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Firestore fetch timeout")), 5000))
+    ]);
+
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ status: false, message: `${token} Connection failed, please scan first` });
+    }
+
+    sock[token] = undefined;
+    const status = await connectWaBeforeSend(token).catch((err) => {
+      console.error("Error in connectWaBeforeSend:", err);
+      return false;
+    });
+
+    if (status) {
+      return res.status(200).json({ status: true, message: `${token} connection restored` });
+    } else {
+      return res.status(200).json({ status: false, message: `${token} connection failed` });
+    }
+  } catch (error) {
+    console.error("Unhandled error in initialize:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
 }
+
+// Menangani unhandled promise rejections secara global
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+
 
 // delay send message
 
@@ -657,6 +655,7 @@ module.exports = {
   getPpUrl,
   fetchGroups,
   deleteCredentials,
+  clearConnection,
   sendMessage,
   initialize,
   connectWaBeforeSend,
