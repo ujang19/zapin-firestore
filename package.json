@@ -26,6 +26,7 @@
     "redis": "^4.7.0",
     "session": "github:neoxr/session#firebase",
     "sharp": "^0.32.2",
+    "sinon": "^19.0.2",
     "socket.io": "^4.7.2",
     "ulid": "^2.3.0",
     "wa-sticker-formatter": "^1.6.0"
