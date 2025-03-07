@@ -1,6 +1,7 @@
 const mysql2 = require("mysql2");
 require("dotenv").config();
-// Create the connection pool. The pool-specific settings are the defaults
+
+// Buat koneksi database dengan pool
 const db = mysql2.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USERNAME,
@@ -12,29 +13,57 @@ const db = mysql2.createPool({
   queueLimit: 0,
 });
 
-const setStatus = (device, status) => {
+// ✅ Cek koneksi saat aplikasi dimulai
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error("❌ MySQL Connection Failed:", err);
+  } else {
+    console.log("✅ MySQL Connected Successfully!");
+    connection.release(); // Pastikan koneksi dilepas setelah pengecekan
+  }
+});
+
+// ✅ Auto-reconnect jika koneksi MySQL terputus
+db.on("error", (err) => {
+  console.error("MySQL Connection Error:", err);
+  if (err.code === "PROTOCOL_CONNECTION_LOST") {
+    console.log("Reconnecting to MySQL...");
+    db.getConnection((error, connection) => {
+      if (error) {
+        console.error("Reconnection failed:", error);
+      } else {
+        console.log("Reconnected to MySQL");
+        connection.release();
+      }
+    });
+  }
+});
+
+// ✅ Perbaiki setStatus dengan query parameterized
+const setStatus = async (device, status) => {
   try {
-    db.query(`UPDATE devices SET status = '${status}' WHERE body = ${device} `);
+    await db.promise().execute(`UPDATE devices SET status = ? WHERE body = ?`, [status, device]);
     return true;
   } catch (error) {
+    console.error("Error updating status:", error);
     return false;
   }
 };
 
-function dbQuery(query) {
-  return new Promise((data) => {
-    db.query(query, (err, res) => {
-      if (err) throw err;
-      try {
-        data(res);
-      } catch (error) {
-        data({});
-        //throw error;
+// ✅ Perbaiki dbQuery untuk menggunakan Promise dan menangani error
+function dbQuery(query, params = []) {
+  return new Promise((resolve, reject) => {
+    db.query(query, params, (err, res) => {
+      if (err) {
+        console.error("Database query error:", err);
+        return reject(err);
       }
+      resolve(res);
     });
   });
 }
 
-module.exports = { setStatus, dbQuery, db };
 
-// EXPORT
+
+// Export semua fungsi
+module.exports = { setStatus, dbQuery, db };

@@ -8,7 +8,6 @@ const lib = require("./server/lib");
 global.log = lib.log;
 
 const express = require("express");
-const cors = require("cors"); // Import CORS
 const app = express();
 const http = require("http");
 const server = http.createServer(app);
@@ -17,7 +16,7 @@ const server = http.createServer(app);
 server.setTimeout(30000);
 
 // Host and port configuration
-const host = "0.0.0.0";
+const host = process.env.HOST || "127.0.0.1";
 const port = process.env.PORT || 3100; // Ensure the app listens on the assigned port.
 
 const { Server } = require("socket.io");
@@ -26,13 +25,6 @@ const io = new Server(server, {
   pingTimeout: 10000,
   connectTimeout: 30000,
 });
-
-// CORS Configuration
-app.use(cors({
-  origin: "https://zapin.my.id", // Izinkan hanya dari domain Laravel
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  credentials: true, // Izinkan credentials seperti cookies atau headers auth
-}));
 
 // Middleware to track request timing and detect 408 errors
 app.use((req, res, next) => {
@@ -102,3 +94,4 @@ process.on("uncaughtException", (err) => {
     error: err.stack,
   });
 });
+
