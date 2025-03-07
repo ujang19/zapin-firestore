@@ -17,7 +17,7 @@ const server = http.createServer(app);
 server.setTimeout(30000);
 
 // Host and port configuration
-// const host = "127.0.0.1";
+const host = "0.0.0.0";
 const port = process.env.PORT || 3100; // Ensure the app listens on the assigned port.
 
 const { Server } = require("socket.io");
