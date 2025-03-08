@@ -6,6 +6,7 @@ const dbs = require("./server/database/index");
 require("dotenv").config();
 const lib = require("./server/lib");
 global.log = lib.log;
+const crypto = require('crypto');
 
 const express = require("express");
 const app = express();
