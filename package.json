@@ -22,6 +22,7 @@
     "pino-pretty": "^10.2.0",
     "pmx": "^1.6.7",
     "qrcode": "^1.5.3",
+    "qrcode-terminal": "^0.12.0",
     "readline": "^1.3.0",
     "redis": "^4.7.0",
     "session": "github:neoxr/session#firebase",
@@ -29,7 +30,7 @@
     "sinon": "^19.0.2",
     "socket.io": "^4.7.2",
     "ulid": "^2.3.0",
-    "wa-sticker-formatter": "^1.6.0"
+    "wa-sticker-formatter": "^4.4.4"
   },
   "scripts": {
     "win-dev": "set NODE_ENV=development&&nodemon server.js",

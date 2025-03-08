@@ -1,3 +1,4 @@
+
 const { Boom } = require("@hapi/boom");
 const {
   default: makeWASocket,
@@ -8,6 +9,7 @@ const {
   DisconnectReason,
   delay: delayin,
   generateProfilePicture,
+  generateWAMessageFromContent,
 } = require("@whiskeysockets/baileys");
 const { getDevice } = require("./database/model");
 const {
@@ -38,142 +40,103 @@ const NodeCache = require("node-cache");
 const { Button, formatButtonMsg } = require("./dto/button");
 const { ulid } = require("ulid");
 const { Section, formatListMsg } = require("./dto/list");
+require("dotenv").config();
 
 const logger = MAIN_LOGGER.child({});
 const msgRetryCounterCache = new NodeCache();
 
+
+const { useFirebaseAuthState } = require("session");
+const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG);
+
 const connectToWhatsApp = async (token, io = null, viaOtp = false) => {
   if (typeof qrcode[token] !== "undefined" && !viaOtp) {
-    io?.emit("qrcode", {
-      token,
-      data: qrcode[token],
-      message: "please scan with your Whatsapp Accountt",
-    });
+    io?.emit("qrcode", { token, data: qrcode[token], message: "Please scan with your WhatsApp account." });
+    return { status: false, sock: sock[token], qrcode: qrcode[token], message: "Please scan" };
+  }
 
-    return {
-      status: false,
-      sock: sock[token],
-      qrcode: qrcode[token],
-      message: "please scan",
-    };
-  }
   if (typeof pairingCode[token] !== "undefined" && viaOtp) {
-    io?.emit("code", {
-      token,
-      data: pairingCode[token],
-      message:
-        "Go to whatsapp -> link device -> link with phone number, and pairing with this code.",
-    });
-    return {
-      status: false,
-      code: pairingCode[token],
-      message: "pairing with that code",
-    };
+    io?.emit("code", { token, data: pairingCode[token], message: "Pair with this code." });
+    return { status: false, code: pairingCode[token], message: "Pairing with that code" };
   }
+
   try {
-    let number = sock[token].user.id.split(":");
-    number = number[0] + "@s.whatsapp.net";
+    let number = sock[token].user.id.split(":")[0] + "@s.whatsapp.net";
     const ppUrl = await getPpUrl(token, number);
-    io?.emit("connection-open", {
-      token,
-      user: sock[token].user,
-      ppUrl,
-    });
+    io?.emit("connection-open", { token, user: sock[token].user, ppUrl });
     delete qrcode[token];
     delete pairingCode[token];
     return { status: true, message: "Already connected" };
   } catch (error) {
-    io?.emit("message", {
-      token,
-      message: `Connecting.. (1)..`,
-    });
+    io?.emit("message", { token, message: `Connecting.. (1)..` });
   }
-  //
 
+  // Get the latest Baileys version
   const { version, isLatest } = await fetchLatestBaileysVersion();
-  console.log(
-    "You re using whatsapp gateway M Pedia v8.x.x - Contact admin if any trouble : 6292298859671"
-  );
-  console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
-  // check or create credentials
-  const { state, saveCreds } = await useMultiFileAuthState(
-    `./credentials/${token}`
+  console.log(`Using WA v${version.join(".")}, isLatest: ${isLatest}`);
+
+  // Use Firestore for session storage
+  const { state, saveCreds, deleteCreds, autoDeleteOldData } = await useFirebaseAuthState(
+    firebaseConfig,
+    `session_${token}`,
+    5 * 60 * 60 * 1000 // Session lasts for 5 hours
   );
 
   sock[token] = makeWASocket({
     version: version,
-
-    browser: Browsers.ubuntu("Mpedia"), //["M-pedia.co.id", "Chrome", "122.0.6261.111"],
+    browser: Browsers.ubuntu("Chrome"),
     logger,
-    printQRInTerminal: false,
-    //  mobile: false,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
-    },
-
+    printQRInTerminal: !viaOtp,
+    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     msgRetryCounterCache,
     generateHighQualityLinkPreview: true,
   });
 
-  if (viaOtp && "me" in state.creds === false) {
+  if (viaOtp && "me" in state.creds === false && !state.creds.registered) {
     const phoneNumber = await getSavedPhoneNumber(token);
     try {
       const code = await sock[token].requestPairingCode(phoneNumber);
-      pairingCode[token] = code;
+      pairingCode[token] = code?.match(/.{1,4}/g)?.join("-") || code;
+      console.log("Pairing code", code);
     } catch (error) {
-      io?.emit("message", {
-        token,
-        message: "Time out, please refresh page",
-      });
+      io?.emit("message", { token, message: "Time out, please refresh the page" });
     }
-    io?.emit("code", {
-      token,
-      data: pairingCode[token],
-      message:
-        "Go to whatsapp -> link device -> link with phone number, and pairing with this code.",
-    });
+    io?.emit("code", { token, data: pairingCode[token], message: "Pair with this code." });
   }
 
+  // Event Processing (Keepilogng Old Logic)
   sock[token].ev.process(async (events) => {
     if (events["connection.update"]) {
       const update = events["connection.update"];
       const { connection, lastDisconnect, qr } = update;
-      console.log("connection", update);
+      console.log("Connection update", update);
 
       if (connection === "close") {
-        const ErrorMessage = lastDisconnect.error?.output?.payload?.message;
-        const ErrorType = lastDisconnect.error?.output?.payload?.error;
+        const ErrorMessage = lastDisconnect?.error?.output?.payload?.message;
+        const ErrorType = lastDisconnect?.error?.output?.payload?.error;
 
-        if (
-          (lastDisconnect?.error instanceof Boom)?.output?.statusCode !==
-          DisconnectReason.loggedOut
-        ) {
+        if ((lastDisconnect?.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut) {
           delete qrcode[token];
-          io?.emit("message", { token: token, message: "Connecting.." });
-          // when refs qr attemts end
-          if (ErrorMessage == "QR refs attempts ended") {
+          io?.emit("message", { token, message: "Connecting.." });
+
+          if (ErrorMessage === "QR refs attempts ended") {
             sock[token].ws.close();
             delete qrcode[token];
             delete pairingCode[token];
             delete sock[token];
-            //   clearConnection(token);
-            io?.emit("message", {
-              token,
-              message: "Request QR ended. reload web to scan again",
-            });
+            io?.emit("message", { token, message: "Request QR ended. Reload web to scan again." });
             return;
           }
-          // ahwtsapp disconnect but still have session folder,should be delete
-          if (
-            ErrorType === "Unauthorized" ||
-            ErrorType === "Method Not Allowed"
-          ) {
+
+          if (ErrorType === "Unauthorized" || ErrorType === "Method Not Allowed") {
             setStatus(token, "Disconnect");
             clearConnection(token);
             connectToWhatsApp(token, io);
           }
-          if (ErrorMessage === "Stream Errored (restart required)") {
+
+          // **Fix for Stream Errored (restart required)**
+          if (ErrorMessage === "Stream Errored (restart required)" || ErrorMessage === "Connection was lost") {
+            console.log("Stream error detected, reconnecting...");
             connectToWhatsApp(token, io);
           }
 
@@ -183,98 +146,55 @@ const connectToWhatsApp = async (token, io = null, viaOtp = false) => {
         } else {
           setStatus(token, "Disconnect");
           console.log("Connection closed. You are logged out.");
-          io?.emit("message", {
-            token,
-            message: "Connection closed. You are logged out.",
-          });
+          io?.emit("message", { token, message: "Connection closed. You are logged out." });
           clearConnection(token);
           connectToWhatsApp(token, io);
         }
       }
 
       if (qr) {
-        // SEND TO YOUR CLIENT SIDE
-        console.log("new qr", token);
-
+        console.log("New QR", token);
         QRCode.toDataURL(qr, function (err, url) {
           if (err) console.log(err);
           qrcode[token] = url;
           connectToWhatsApp(token, io, viaOtp);
         });
       }
+
       if (connection === "open") {
         setStatus(token, "Connected");
         delete qrcode[token];
         delete pairingCode[token];
-        let number = sock[token].user.id.split(":");
-        number = number[0] + "@s.whatsapp.net";
+        let number = sock[token].user.id.split(":")[0] + "@s.whatsapp.net";
         const ppUrl = await getPpUrl(token, number);
-        console.log("connection open", ppUrl);
-
-        io?.emit("connection-open", {
-          token,
-          user: sock[token].user,
-          ppUrl,
-        });
-        delete qrcode[token];
-        delete pairingCode[token];
+        console.log("Connection open", ppUrl);
+        io?.emit("connection-open", { token, user: sock[token].user, ppUrl });
       }
     }
 
     if (events["creds.update"]) {
-      const creds = events["creds.update"];
-      saveCreds(creds);
+      saveCreds(events["creds.update"]);
     }
 
     if (events["messages.upsert"]) {
       const messages = events["messages.upsert"];
-
       const reply = await IncomingMessage(messages, sock[token]);
       console.log(reply);
     }
   });
 
-  sock[token].ev.on("call", async (node) => {
-    const getDeviceWa = await getDevice(sock[token].user.id.split(":")[0]);
-    const reject_call = getDeviceWa[0].reject_call;
+  // Auto delete old session data every 1 hour
+  setInterval(async () => {
+    await autoDeleteOldData();
+  }, 60 * 60 * 1000);
 
-    if (reject_call === 1) {
-      const { from, id, status } = node[0];
-      if (status == "offer") {
-        const sendresult = {
-          tag: "call",
-          attrs: {
-            from: sock[token].user.id,
-            to: from,
-            id: sock[token].generateMessageTag(),
-          },
-          content: [
-            {
-              tag: "reject",
-              attrs: {
-                "call-id": id,
-                "call-creator": from,
-                count: "0",
-              },
-              content: undefined,
-            },
-          ],
-        };
-        await sock[token].query(sendresult);
-      }
-    }
-  });
-
-  return {
-    sock: sock[token],
-    qrcode: qrcode[token],
-  };
+  return { sock: sock[token], qrcode: qrcode[token] };
 };
-//
+
+// **Keep old reconnect logic**
 async function connectWaBeforeSend(token) {
-  let status = undefined;
-  let connect;
-  connect = await connectToWhatsApp(token);
+  let status;
+  let connect = await connectToWhatsApp(token);
 
   await connect.sock.ev.on("connection.update", (con) => {
     const { connection, qr } = con;
@@ -285,17 +205,19 @@ async function connectWaBeforeSend(token) {
       status = false;
     }
   });
+
   let counter = 0;
   while (typeof status === "undefined") {
     counter++;
-    if (counter > 4) {
-      break;
-    }
+    if (counter > 4) break;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-
   return status;
 }
+
+
+
+
 
 //set available
 const sendAvailable = async (body) => {
@@ -314,7 +236,7 @@ const sendAvailable = async (body) => {
   }
 };
 // text message
-const sendText = async (token, number, text, delay = 1) => {
+const sendText = async (token, number, text, delay = 0) => {
   try {
     await delayMsg(delay * 1000, sock[token], number);
     const sendingTextMessage = await sock[token].sendMessage(
@@ -329,7 +251,7 @@ const sendText = async (token, number, text, delay = 1) => {
     return false;
   }
 };
-const sendMessage = async (token, number, msg, delay) => {
+const sendMessage = async (token, number, msg, delay = 0) => {
   try {
     await delayMsg(delay * 1000, sock[token], number);
     const sendingTextMessage = await sock[token].sendMessage(
@@ -371,7 +293,9 @@ async function sendMedia(
     mediatype: type !== "video" && type !== "image" ? "document" : type,
   });
   const message = { ...generate.message };
+
   await delayMsg(delay * 1000, sock[token], number);
+
   return await sock[token].sendMessage(number, {
     forward: {
       key: { remoteJid: ownerJid, fromMe: true },
@@ -616,107 +540,106 @@ async function getPpUrl(token, number, highrest) {
   }
 }
 
-// close connection
+// Inisialisasi Firestore Auth State
+const sessionStore = async (token) => {
+    return await useFirebaseAuthState(firebaseConfig, `session_${token}`);
+};
+
+// 🔴 Fungsi untuk menutup koneksi dan menghapus sesi di Firestore
 async function deleteCredentials(token, io = null) {
-  if (io !== null) {
-    io.emit("message", { token: token, message: "Logout Progres.." });
-  }
   try {
-    if (typeof sock[token] === "undefined") {
-      const status = await connectWaBeforeSend(token);
-      if (status) {
-        sock[token].logout();
-        delete sock[token];
+      const { deleteCreds } = await sessionStore(token);
+
+      if (io !== null) {
+          io.emit("message", { token, message: "Logout in progress..." });
       }
-    } else {
-      sock[token].logout();
-      delete sock[token];
-    }
-    delete qrcode[token];
-    clearInterval(intervalStore[token]);
-    setStatus(token, "Disconnect");
 
-    if (io != null) {
-      io.emit("Unauthorized", token);
-      io.emit("message", {
-        token: token,
-        message: "Connection closed. You are logged out.",
-      });
-    }
-    if (fs.existsSync(`./credentials/${token}`)) {
-      fs.rmSync(
-        `./credentials/${token}`,
-        { recursive: true, force: true },
-        (err) => {
-          if (err) console.log(err);
-        }
-      );
-      // fs.unlinkSync(`./sessions/session-${device}.json`)
-    }
+      // Cek apakah sesi ada sebelum logout
+      if (typeof sock[token] !== "undefined") {
+          console.log(`Logging out ${token}...`);
+          sock[token].logout();
+          delete sock[token];
+      } else {
+          console.log(`Session ${token} not found.`);
+      }
 
-    // fs.rmdir(`credentials/${token}`, { recursive: true }, (err) => {
-    //     if (err) {
-    //         throw err;
-    //     }
-    //     console.log(`credentials/${token} is deleted`);
-    // });
+      delete qrcode[token];
+      clearInterval(intervalStore[token]);
+      setStatus(token, "Disconnect");
 
-    return {
-      status: true,
-      message: "Deleting session and credential",
-    };
+      // Hapus kredensial dari Firestore
+      await deleteCreds();
+      console.log(`Firestore: Credentials for ${token} deleted`);
+
+      if (io != null) {
+          io.emit("Unauthorized", token);
+          io.emit("message", { token, message: "Connection closed. You are logged out." });
+      }
+
+      return { status: true, message: "Session and credentials deleted successfully" };
   } catch (error) {
-    console.log(error);
-    return {
-      status: true,
-      message: "Nothing deleted",
-    };
+      console.error("Error deleting credentials:", error);
+      return { status: false, message: "Failed to delete session and credentials" };
   }
 }
 
-function clearConnection(token) {
-  clearInterval(intervalStore[token]);
 
-  delete sock[token];
-  delete qrcode[token];
-  setStatus(token, "Disconnect");
-  if (fs.existsSync(`./credentials/${token}`)) {
-    fs.rmSync(
-      `./credentials/${token}`,
-      { recursive: true, force: true },
-      (err) => {
-        if (err) console.log(err);
+// 🔵 Fungsi untuk membersihkan koneksi tanpa menghapus Firestore
+async function clearConnection(token) {
+  try {
+      const { deleteCreds } = await sessionStore(token);
+
+      clearInterval(intervalStore[token]);
+
+      if (typeof sock[token] !== "undefined") {
+          console.log(`Clearing session ${token}...`);
+          delete sock[token];
+      } else {
+          console.log(`Session ${token} not found.`);
       }
-    );
-    console.log(`credentials/${token} is deleted`);
+
+      delete qrcode[token];
+      setStatus(token, "Disconnect");
+
+      // Hapus kredensial hanya jika masih ada di Firestore
+      await deleteCreds();
+      console.log(`Firestore: Session ${token} cleared`);
+
+      return { status: true, message: `Session ${token} cleared successfully` };
+  } catch (error) {
+      console.error("Error clearing session:", error);
+      return { status: false, message: `Failed to clear session ${token}` };
   }
 }
 
 async function initialize(req, res) {
   const { token } = req.body;
-  if (token) {
-    const fs = require("fs");
-    const path = `./credentials/${token}`;
-    if (fs.existsSync(path)) {
+  if (!token) {
+      return res.status(400).json({ status: false, message: "Token is required" });
+  }
+
+  try {
+      const { getCreds } = await sessionStore(token);
+      const storedCreds = await getCreds();
+
+      if (!storedCreds) {
+          return res.status(404).json({ status: false, message: "Session not found, please scan QR" });
+      }
+
+      // If session exists, reconnect
       sock[token] = undefined;
       const status = await connectWaBeforeSend(token);
       if (status) {
-        return res
-          .status(200)
-          .json({ status: true, message: `${token} connection restored` });
+          return res.status(200).json({ status: true, message: `${token} connection restored` });
       } else {
-        return res
-          .status(200)
-          .json({ status: false, message: `${token} connection failed` });
+          return res.status(500).json({ status: false, message: `${token} connection failed` });
       }
-    }
-    return res.send({
-      status: false,
-      message: `${token} Connection failed,please scan first`,
-    });
+  } catch (error) {
+      console.error("Error initializing session:", error);
+      return res.status(500).json({ status: false, message: "Server error while initializing session" });
   }
-  return res.send({ status: false, message: "Wrong Parameterss" });
 }
+
 
 // delay send message
 
@@ -732,6 +655,7 @@ module.exports = {
   getPpUrl,
   fetchGroups,
   deleteCredentials,
+  clearConnection,
   sendMessage,
   initialize,
   connectWaBeforeSend,
